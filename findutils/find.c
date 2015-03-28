@@ -728,27 +728,10 @@ static int FAST_FUNC fileAction(const char *fileName,
 		int depth IF_NOT_FEATURE_FIND_MAXDEPTH(UNUSED_PARAM))
 {
 	int r;
-	int same_fs = 1;
-
-#if ENABLE_FEATURE_FIND_XDEV
-	if (S_ISDIR(statbuf->st_mode) && G.xdev_count) {
-		int i;
-		for (i = 0; i < G.xdev_count; i++) {
-			if (G.xdev_dev[i] == statbuf->st_dev)
-				goto found;
-		}
-		//bb_error_msg("'%s': not same fs", fileName);
-		same_fs = 0;
- found: ;
-	}
-#endif
 
 #if ENABLE_FEATURE_FIND_MAXDEPTH
-	if (depth < G.minmaxdepth[0]) {
-		if (same_fs)
-			return TRUE; /* skip this, continue recursing */
-		return SKIP; /* stop recursing */
-	}
+	if (depth < G.minmaxdepth[0])
+		return TRUE; /* skip this, continue recursing */
 	if (depth > G.minmaxdepth[1])
 		return SKIP; /* stop recursing */
 #endif
@@ -764,11 +747,21 @@ static int FAST_FUNC fileAction(const char *fileName,
 			return SKIP;
 	}
 #endif
+#if ENABLE_FEATURE_FIND_XDEV
 	/* -xdev stops on mountpoints, but AFTER mountpoit itself
 	 * is processed as usual */
-	if (!same_fs) {
-		return SKIP;
+	if (S_ISDIR(statbuf->st_mode)) {
+		if (G.xdev_count) {
+			int i;
+			for (i = 0; i < G.xdev_count; i++) {
+				if (G.xdev_dev[i] == statbuf->st_dev)
+					goto found;
+			}
+			return SKIP;
+ found: ;
+		}
 	}
+#endif
 
 	/* Cannot return 0: our caller, recursive_action(),
 	 * will perror() and skip dirs (if called on dir) */
@@ -814,6 +807,31 @@ static const char* plus_minus_num(const char* str)
 }
 #endif
 
+/* Say no to GCCism */
+#define USE_NESTED_FUNCTION 0
+
+#if !USE_NESTED_FUNCTION
+struct pp_locals {
+ action*** appp;
+ unsigned cur_group;
+ unsigned cur_action;
+ IF_FEATURE_FIND_NOT( bool invert_flag; )
+};
+static action* alloc_action(struct pp_locals *ppl, int sizeof_struct, action_fp f)
+{
+ action *ap = xzalloc(sizeof_struct);
+ action **app;
+ action ***group = &ppl->appp[ppl->cur_group];
+ *group = app = xrealloc(*group, (ppl->cur_action+2) * sizeof(ppl->appp[0][0]));
+ app[ppl->cur_action++] = ap;
+ app[ppl->cur_action] = NULL;
+ ap->f = f;
+ IF_FEATURE_FIND_NOT( ap->invert = ppl->invert_flag; )
+ IF_FEATURE_FIND_NOT( ppl->invert_flag = 0; )
+ return ap;
+}
+#endif
+
 static action*** parse_params(char **argv)
 {
 	enum {
@@ -838,11 +856,6 @@ static action*** parse_params(char **argv)
 	                        PARM_name      ,
 	                        PARM_iname     ,
 	IF_FEATURE_FIND_PATH(   PARM_path      ,)
-#if ENABLE_DESKTOP
-	/* -wholename is a synonym for -path */
-	/* We support it because Linux kernel's "make tags" uses it */
-	IF_FEATURE_FIND_PATH(   PARM_wholename ,)
-#endif
 	IF_FEATURE_FIND_PATH(   PARM_ipath     ,)
 	IF_FEATURE_FIND_REGEX(  PARM_regex     ,)
 	IF_FEATURE_FIND_TYPE(   PARM_type      ,)
@@ -878,12 +891,9 @@ static action*** parse_params(char **argv)
 	IF_FEATURE_FIND_EXEC(   "-exec\0"   )
 	IF_FEATURE_FIND_PAREN(  "(\0"       )
 	/* All options/actions starting from here require argument */
-	                        "-name\0"
-	                        "-iname\0"
+	                         "-name\0"
+	                         "-iname\0"
 	IF_FEATURE_FIND_PATH(   "-path\0"   )
-#if ENABLE_DESKTOP
-	IF_FEATURE_FIND_PATH(   "-wholename\0")
-#endif
 	IF_FEATURE_FIND_PATH(   "-ipath\0"  )
 	IF_FEATURE_FIND_REGEX(  "-regex\0"  )
 	IF_FEATURE_FIND_TYPE(   "-type\0"   )
@@ -900,10 +910,19 @@ static action*** parse_params(char **argv)
 	IF_FEATURE_FIND_MAXDEPTH("-mindepth\0""-maxdepth\0")
 	;
 
+#if !USE_NESTED_FUNCTION
+    struct pp_locals ppl;
+#define appp         (ppl.appp       )
+#define cur_group   (ppl.cur_group  )
+#define cur_action  (ppl.cur_action )
+#define invert_flag (ppl.invert_flag)
+#define ALLOC_ACTION(name) (action_##name*)alloc_action(&ppl, sizeof(action_##name), (action_fp) func_##name)
+#else
+
 	action*** appp;
-	unsigned cur_group = 0;
-	unsigned cur_action = 0;
-	IF_FEATURE_FIND_NOT( bool invert_flag = 0; )
+	unsigned cur_group;
+	unsigned cur_action;
+	IF_FEATURE_FIND_NOT( bool invert_flag; )
 
 	/* This is the only place in busybox where we use nested function.
 	 * So far more standard alternatives were bigger. */
@@ -912,7 +931,7 @@ static action*** parse_params(char **argv)
 	action* alloc_action(int sizeof_struct, action_fp f)
 	{
 		action *ap;
-		appp[cur_group] = xrealloc(appp[cur_group], (cur_action+2) * sizeof(*appp));
+		appp[cur_group] = xrealloc(appp[cur_group], (cur_action+2) * sizeof(appp[0][0]));
 		appp[cur_group][cur_action++] = ap = xzalloc(sizeof_struct);
 		appp[cur_group][cur_action] = NULL;
 		ap->f = f;
@@ -922,6 +941,11 @@ static action*** parse_params(char **argv)
 	}
 
 #define ALLOC_ACTION(name) (action_##name*)alloc_action(sizeof(action_##name), (action_fp) func_##name)
+#endif
+   
+    cur_group = 0;
+    cur_action = 0;
+    IF_FEATURE_FIND_NOT( invert_flag = 0; )
 
 	appp = xzalloc(2 * sizeof(appp[0])); /* appp[0],[1] == NULL */
 
@@ -987,7 +1011,7 @@ static action*** parse_params(char **argv)
 			dbg("%d", __LINE__);
 			/* start new OR group */
 			cur_group++;
-			appp = xrealloc(appp, (cur_group+2) * sizeof(*appp));
+			appp = xrealloc(appp, (cur_group+2) * sizeof(appp[0]));
 			/*appp[cur_group] = NULL; - already NULL */
 			appp[cur_group+1] = NULL;
 			cur_action = 0;
@@ -1091,7 +1115,7 @@ static action*** parse_params(char **argv)
 			ap->iname = (parm == PARM_iname);
 		}
 #if ENABLE_FEATURE_FIND_PATH
-		else if (parm == PARM_path IF_DESKTOP(|| parm == PARM_wholename) || parm == PARM_ipath) {
+		else if (parm == PARM_path || parm == PARM_ipath) {
 			action_path *ap;
 			dbg("%d", __LINE__);
 			ap = ALLOC_ACTION(path);
@@ -1245,6 +1269,9 @@ static action*** parse_params(char **argv)
 	dbg("exiting %s", __func__);
 	return appp;
 #undef ALLOC_ACTION
+#undef appp
+#undef cur_action
+#undef invert_flag
 }
 
 int find_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
