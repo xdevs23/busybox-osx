@@ -91,6 +91,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //usage:     "\n			a SIGXCPU after N seconds"
 
 #include "libbb.h"
+#include <sys/resource.h> /* getrlimit */
 
 /*
 Five applets here: chpst, envdir, envuidgid, setuidgid, softlimit.
@@ -417,8 +418,7 @@ int chpst_main(int argc UNUSED_PARAM, char **argv)
 	}
 
 	if (opt & OPT_root) {
-		xchdir(root);
-		xchroot(".");
+		xchroot(root);
 	}
 
 	if (opt & OPT_u) {

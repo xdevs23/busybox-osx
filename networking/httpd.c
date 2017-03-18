@@ -796,9 +796,9 @@ static void parse_conf(const char *path, int flag)
 		/* the line is not recognized */
  config_error:
 		bb_error_msg("config error '%s' in '%s'", buf, filename);
-	 } /* while (fgets) */
+	} /* while (fgets) */
 
-	 fclose(f);
+	fclose(f);
 }
 
 #if ENABLE_FEATURE_HTTPD_ENCODE_URL_STR
@@ -1414,7 +1414,7 @@ static void send_cgi_and_exit(
 		if (script != url) { /* paranoia */
 			*script = '\0';
 			if (chdir(url + 1) != 0) {
-				bb_perror_msg("chdir(%s)", url + 1);
+				bb_perror_msg("can't change directory to '%s'", url + 1);
 				goto error_execing_cgi;
 			}
 			// not needed: *script = '/';
@@ -1594,7 +1594,7 @@ static NOINLINE void send_file_and_exit(const char *url, int what)
 	}
 	range_len = MAXINT(off_t);
 	if (range_start >= 0) {
-		if (!range_end) {
+		if (!range_end || range_end > file_size - 1) {
 			range_end = file_size - 1;
 		}
 		if (range_end < range_start
@@ -1676,7 +1676,7 @@ static int checkPermIP(void)
 
 #if ENABLE_FEATURE_HTTPD_BASIC_AUTH
 
-# if ENABLE_FEATURE_HTTPD_AUTH_MD5 && ENABLE_PAM
+# if ENABLE_PAM
 struct pam_userinfo {
 	const char *name;
 	const char *pw;
@@ -1708,7 +1708,7 @@ static int pam_talker(int num_msg,
 		case PAM_PROMPT_ECHO_OFF:
 			s = userinfo->pw;
 			break;
-	        case PAM_ERROR_MSG:
+		case PAM_ERROR_MSG:
         	case PAM_TEXT_INFO:
         		s = "";
 			break;
@@ -1842,7 +1842,9 @@ static int check_user_passwd(const char *path, char *user_and_passwd)
 
 			if (passwd[0] == '$' && isdigit(passwd[1])) {
 				char *encrypted;
+# if !ENABLE_PAM
  check_encrypted:
+# endif
 				/* encrypt pwd from peer and check match with local one */
 				encrypted = pw_encrypt(
 					/* pwd (from peer): */  colon_after_user + 1,

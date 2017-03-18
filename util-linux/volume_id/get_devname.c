@@ -49,7 +49,11 @@ get_label_uuid(int fd, char **label, char **uuid, const char **type)
 	if (volume_id_probe_all(vid, /*0,*/ size) != 0)
 		goto ret;
 
-	if (vid->label[0] != '\0' || vid->uuid[0] != '\0') {
+	if (vid->label[0] != '\0' || vid->uuid[0] != '\0'
+#if ENABLE_FEATURE_BLKID_TYPE
+	 || vid->type != NULL
+#endif
+	) {
 		*label = xstrndup(vid->label, sizeof(vid->label));
 		*uuid  = xstrndup(vid->uuid, sizeof(vid->uuid));
 #if ENABLE_FEATURE_BLKID_TYPE
@@ -115,7 +119,7 @@ uuidcache_check_device(const char *device,
 }
 
 static struct uuidCache_s*
-uuidcache_init(void)
+uuidcache_init(int scan_devices)
 {
 	dbg("DBG: uuidCache=%x, uuidCache");
 	if (uuidCache)
@@ -131,12 +135,12 @@ uuidcache_init(void)
 	 * This is unacceptably complex. Let's just scan /dev.
 	 * (Maybe add scanning of /sys/block/XXX/dev for devices
 	 * somehow not having their /dev/XXX entries created?) */
-
-	recursive_action("/dev", ACTION_RECURSE,
-		uuidcache_check_device, /* file_action */
-		NULL, /* dir_action */
-		NULL, /* userData */
-		0 /* depth */);
+	if (scan_devices)
+		recursive_action("/dev", ACTION_RECURSE,
+			uuidcache_check_device, /* file_action */
+			NULL, /* dir_action */
+			NULL, /* userData */
+			0 /* depth */);
 
 	return uuidCache;
 }
@@ -150,7 +154,7 @@ get_spec_by_x(int n, const char *t, int *majorPtr, int *minorPtr)
 {
 	struct uuidCache_s *uc;
 
-	uc = uuidcache_init();
+	uc = uuidcache_init(/*scan_devices:*/ 1);
 	while (uc) {
 		switch (n) {
 		case UUID:
@@ -215,11 +219,11 @@ get_spec_by_volume_label(const char *s, int *major, int *minor)
 #endif // UNUSED
 
 /* Used by blkid */
-void display_uuid_cache(void)
+void display_uuid_cache(int scan_devices)
 {
 	struct uuidCache_s *uc;
 
-	uc = uuidcache_init();
+	uc = uuidcache_init(scan_devices);
 	while (uc) {
 		printf("%s:", uc->device);
 		if (uc->label[0])
@@ -264,7 +268,7 @@ char *get_devname_from_label(const char *spec)
 {
 	struct uuidCache_s *uc;
 
-	uc = uuidcache_init();
+	uc = uuidcache_init(/*scan_devices:*/ 1);
 	while (uc) {
 		if (uc->label[0] && strcmp(spec, uc->label) == 0) {
 			return xstrdup(uc->device);
@@ -278,7 +282,7 @@ char *get_devname_from_uuid(const char *spec)
 {
 	struct uuidCache_s *uc;
 
-	uc = uuidcache_init();
+	uc = uuidcache_init(/*scan_devices:*/ 1);
 	while (uc) {
 		/* case of hex numbers doesn't matter */
 		if (strcasecmp(spec, uc->uc_uuid) == 0) {

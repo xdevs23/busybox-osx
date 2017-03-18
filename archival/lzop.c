@@ -14,7 +14,7 @@
 
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
@@ -116,7 +116,7 @@ static NOINLINE int lzo1x_optimize(uint8_t *in, unsigned in_len,
 	unsigned nl;
 	unsigned long o_m1_a = 0, o_m1_b = 0, o_m2 = 0, o_m3_a = 0, o_m3_b = 0;
 
-//	  LZO_UNUSED(wrkmem);
+//	LZO_UNUSED(wrkmem);
 
 	*out_len = 0;
 
@@ -346,11 +346,11 @@ static NOINLINE int lzo1x_optimize(uint8_t *in, unsigned in_len,
 	return LZO_E_EOF_NOT_FOUND;
 
  eof_found:
-//	  LZO_UNUSED(o_m1_a); LZO_UNUSED(o_m1_b); LZO_UNUSED(o_m2);
-//	  LZO_UNUSED(o_m3_a); LZO_UNUSED(o_m3_b);
+//	LZO_UNUSED(o_m1_a); LZO_UNUSED(o_m1_b); LZO_UNUSED(o_m2);
+//	LZO_UNUSED(o_m3_a); LZO_UNUSED(o_m3_b);
 	*out_len = pd(op, out);
 	return (ip == ip_end ? LZO_E_OK :
-		   (ip < ip_end	 ? LZO_E_INPUT_NOT_CONSUMED : LZO_E_INPUT_OVERRUN));
+		(ip < ip_end ? LZO_E_INPUT_NOT_CONSUMED : LZO_E_INPUT_OVERRUN));
 }
 
 /**********************************************************************/
@@ -1077,7 +1077,7 @@ static char* FAST_FUNC make_new_name_lzop(char *filename, const char *expected_e
 	return xasprintf("%s.lzo", filename);
 }
 
-static IF_DESKTOP(long long) int FAST_FUNC pack_lzop(unpack_info_t *info UNUSED_PARAM)
+static IF_DESKTOP(long long) int FAST_FUNC pack_lzop(transformer_aux_data_t *aux UNUSED_PARAM)
 {
 	if (option_mask32 & OPT_DECOMPRESS)
 		return do_lzo_decompress();

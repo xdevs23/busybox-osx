@@ -1352,8 +1352,7 @@ static void load_history(line_input_t *st_parm)
 		/* fill temp_h[], retaining only last MAX_HISTORY lines */
 		memset(temp_h, 0, sizeof(temp_h));
 		idx = 0;
-		if (!ENABLE_FEATURE_EDITING_SAVE_ON_EXIT)
-			st_parm->cnt_history_in_file = 0;
+		st_parm->cnt_history_in_file = 0;
 		while ((line = xmalloc_fgetline(fp)) != NULL) {
 			if (line[0] == '\0') {
 				free(line);
@@ -1361,8 +1360,7 @@ static void load_history(line_input_t *st_parm)
 			}
 			free(temp_h[idx]);
 			temp_h[idx] = line;
-			if (!ENABLE_FEATURE_EDITING_SAVE_ON_EXIT)
-				st_parm->cnt_history_in_file++;
+			st_parm->cnt_history_in_file++;
 			idx++;
 			if (idx == st_parm->max_history)
 				idx = 0;
@@ -2517,7 +2515,7 @@ int FAST_FUNC read_line_input(line_input_t *st, const char *prompt, char *comman
 			switch (ic) {
 				//case KEYCODE_LEFT: - bash doesn't do this
 				case 'b':
-				   	ctrl_left();
+					ctrl_left();
 					break;
 				//case KEYCODE_RIGHT: - bash doesn't do this
 				case 'f':
@@ -2529,9 +2527,9 @@ int FAST_FUNC read_line_input(line_input_t *st, const char *prompt, char *comman
 					/* Delete word forward */
 					int nc, sc = cursor;
 					ctrl_right();
-					nc = cursor;
-					input_backward(cursor - sc);
-					while (--nc >= cursor)
+					nc = cursor - sc;
+					input_backward(nc);
+					while (--nc >= 0)
 						input_delete(1);
 					break;
 				}
@@ -2731,7 +2729,8 @@ int FAST_FUNC read_line_input(const char* prompt, char* command, int maxsize)
 {
 	fputs(prompt, stdout);
 	fflush_all();
-	fgets(command, maxsize, stdin);
+	if (!fgets(command, maxsize, stdin))
+		return -1;
 	return strlen(command);
 }
 

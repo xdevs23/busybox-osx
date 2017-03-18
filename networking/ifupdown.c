@@ -49,9 +49,6 @@
 #include <fnmatch.h>
 
 #define MAX_OPT_DEPTH 10
-#define EUNBALBRACK 10001
-#define EUNDEFVAR   10002
-#define EUNBALPER   10000
 
 #if ENABLE_FEATURE_IFUPDOWN_MAPPING
 #define MAX_INTERFACE_LENGTH 10
@@ -140,8 +137,6 @@ static const char keywords_up_down[] ALIGN1 =
 	"up\0"
 	"down\0"
 	"pre-up\0"
-	"pre-down\0"
-	"post-up\0"
 	"post-down\0"
 ;
 
@@ -235,7 +230,7 @@ static int count_netmask_bits(const char *dotted_quad)
 static char *parse(const char *command, struct interface_defn_t *ifd)
 {
 	size_t old_pos[MAX_OPT_DEPTH] = { 0 };
-	int okay[MAX_OPT_DEPTH] = { 1 };
+	smallint okay[MAX_OPT_DEPTH] = { 1 };
 	int opt_depth = 1;
 	char *result = NULL;
 
@@ -246,13 +241,10 @@ static char *parse(const char *command, struct interface_defn_t *ifd)
 			command++;
 			break;
 		case '\\':
-			if (command[1]) {
-				addstr(&result, command + 1, 1);
-				command += 2;
-			} else {
-				addstr(&result, command, 1);
+			if (command[1])
 				command++;
-			}
+			addstr(&result, command, 1);
+			command++;
 			break;
 		case '[':
 			if (command[1] == '[' && opt_depth < MAX_OPT_DEPTH) {
@@ -261,7 +253,7 @@ static char *parse(const char *command, struct interface_defn_t *ifd)
 				opt_depth++;
 				command += 2;
 			} else {
-				addstr(&result, "[", 1);
+				addstr(&result, command, 1);
 				command++;
 			}
 			break;
@@ -273,7 +265,7 @@ static char *parse(const char *command, struct interface_defn_t *ifd)
 				}
 				command += 2;
 			} else {
-				addstr(&result, "]", 1);
+				addstr(&result, command, 1);
 				command++;
 			}
 			break;
@@ -285,7 +277,7 @@ static char *parse(const char *command, struct interface_defn_t *ifd)
 				command++;
 				nextpercent = strchr(command, '%');
 				if (!nextpercent) {
-					errno = EUNBALPER;
+					/* Unterminated %var% */
 					free(result);
 					return NULL;
 				}
@@ -330,13 +322,13 @@ static char *parse(const char *command, struct interface_defn_t *ifd)
 	}
 
 	if (opt_depth > 1) {
-		errno = EUNBALBRACK;
+		/* Unbalanced bracket */
 		free(result);
 		return NULL;
 	}
 
 	if (!okay[0]) {
-		errno = EUNDEFVAR;
+		/* Undefined variable and we aren't in a bracket */
 		free(result);
 		return NULL;
 	}
@@ -895,6 +887,11 @@ static struct interfaces_file_t *read_interfaces(const char *filename)
 				if (rest_of_line[0] == '\0')
 					bb_error_msg_and_die("option with empty value \"%s\"", buf);
 
+				if (strcmp(first_word, "post-up") == 0)
+					first_word += 5; /* "up" */
+				else if (strcmp(first_word, "pre-down") == 0)
+					first_word += 4; /* "down" */
+
 				/* If not one of "up", "down",... words... */
 				if (index_in_strings(keywords_up_down, first_word) < 0) {
 					int i;
@@ -963,7 +960,7 @@ static char *setlocalenv(const char *format, const char *name, const char *value
 	return result;
 }
 
-static void set_environ(struct interface_defn_t *iface, const char *mode)
+static void set_environ(struct interface_defn_t *iface, const char *mode, const char *opt)
 {
 	int i;
 	char **pp;
@@ -976,7 +973,7 @@ static void set_environ(struct interface_defn_t *iface, const char *mode)
 	}
 
 	/* note: last element will stay NULL: */
-	G.my_environ = xzalloc(sizeof(char *) * (iface->n_options + 6));
+	G.my_environ = xzalloc(sizeof(char *) * (iface->n_options + 7));
 	pp = G.my_environ;
 
 	for (i = 0; i < iface->n_options; i++) {
@@ -990,6 +987,7 @@ static void set_environ(struct interface_defn_t *iface, const char *mode)
 	*pp++ = setlocalenv("%s=%s", "ADDRFAM", iface->address_family->name);
 	*pp++ = setlocalenv("%s=%s", "METHOD", iface->method->name);
 	*pp++ = setlocalenv("%s=%s", "MODE", mode);
+	*pp++ = setlocalenv("%s=%s", "PHASE", opt);
 	if (G.startup_PATH)
 		*pp++ = setlocalenv("%s=%s", "PATH", G.startup_PATH);
 }
@@ -1044,21 +1042,21 @@ static int check(char *str)
 static int iface_up(struct interface_defn_t *iface)
 {
 	if (!iface->method->up(iface, check)) return -1;
-	set_environ(iface, "start");
+	set_environ(iface, "start", "pre-up");
 	if (!execute_all(iface, "pre-up")) return 0;
 	if (!iface->method->up(iface, doit)) return 0;
+	set_environ(iface, "start", "post-up");
 	if (!execute_all(iface, "up")) return 0;
-	if (!execute_all(iface, "post-up")) return 0;
 	return 1;
 }
 
 static int iface_down(struct interface_defn_t *iface)
 {
-	if (!iface->method->down(iface,check)) return -1;
-	set_environ(iface, "stop");
-	if (!execute_all(iface, "pre-down")) return 0;
+	if (!iface->method->down(iface, check)) return -1;
+	set_environ(iface, "stop", "pre-down");
 	if (!execute_all(iface, "down")) return 0;
 	if (!iface->method->down(iface, doit)) return 0;
+	set_environ(iface, "stop", "post-down");
 	if (!execute_all(iface, "post-down")) return 0;
 	return 1;
 }
